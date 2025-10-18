@@ -1,12 +1,15 @@
 #!/bin/env bash
 set -euo pipefail
 #
+# 本文件中的函数大多由 setup.sh 调用，但大多数导出的变量在 Ansible 剧本中使用。
 # Functions in this file are mostly called by setup.sh but most of
 # the exported variables are consumed within the Ansible playbook.
 
 done_format="\e[32mdone\e[0m"
 fail_format="\e[31mfail\e[0m"
 
+# 该函数请求用户同意将 ovos-installer.log 的内容上传到 https://paste.uoi.io。
+# 如果没有用户同意，上传可能会导致安全问题。
 # This function asks for user agreement on uploading the content of
 # ovos-installer.log on https://paste.uoi.io. Without the user
 # agreement this could lead to security infringement.
@@ -26,6 +29,8 @@ function ask_optin() {
     done
 }
 
+# 当 trap 捕获到 ERR 信号时，该函数会退出安装程序。
+# 主要在 setup.sh 中使用，以便在函数执行期间处理错误。
 # The function exits the installer when trap detects ERR as signal.
 # This is mainly used in setup.sh to handle errors during the functions
 # execution.
@@ -47,6 +52,8 @@ function on_error() {
     exit "${EXIT_FAILURE}"
 }
 
+# 删除先前运行留下的安装器日志文件（如果存在）。
+# 该文件将在每次运行安装程序时删除。
 # Delete installer log file if existing from previous run.
 # This file will be deleted at each execution of the installer.
 function delete_log() {
@@ -55,6 +62,8 @@ function delete_log() {
     fi
 }
 
+# 检测运行安装程序的用户信息。
+# 安装程序必须以超级权限运行，但可以由 root 或通过 sudo 的用户运行，所以我们需要知道是谁在运行。
 # Detect information about the user running the installer.
 # Installer must be executed with super privileges but either
 # "root" or "sudo" can run this script, we need to know whom.
@@ -95,6 +104,20 @@ function detect_user() {
     export VENV_PATH="${RUN_AS_HOME}/.venvs/${INSTALLER_VENV_NAME}"
 }
 
+# 检测正在运行的声音服务器（如果有），例如 PulseAudio 或 PipeWire。
+# 如果检测到 PulseAudio，函数会检查 PulseAudio 服务是如何启动的，是直接由 PulseAudio 启动还是通过 pipewire-pulse 启动。
+#
+# 该函数设置以下环境变量：
+#   - PULSE_SERVER: 如果检测到则为 PulseAudio 套接字路径
+#   - PULSE_COOKIE: 如果检测到则为 PulseAudio cookie 路径
+#   - SOUND_SERVER: 检测到的声音服务器名称或 "N/A"
+#
+# 依赖项：
+#   - RUN_AS_UID: 必须由 detect_user() 设置
+#   - RUN_AS_HOME: 必须由 detect_user() 设置
+#
+# 返回值：
+#   始终成功，如果未检测到服务器则将 SOUND_SERVER 设置为 "N/A"
 # Detect which sound server is running (if running), PulseAudio or PipeWire.
 # If PulseAudio is running, the function checks how the PulseAudio
 # service is started, whether via PulseAudio itself or via pipewire-pulse.
@@ -149,6 +172,8 @@ function detect_sound() {
     echo -e "[$done_format]"
 }
 
+# 检查特定的 CPU 指令集，以便利用 TensorFlow 和/或 ONNXruntime。
+# 导出的变量将在 Ansible 剧本中使用，用于在未检测到 AVX2 或 SIMD 时禁用需要这些特性的某些唤醒词和 VAD 插件。
 # Check for specific CPU instruction set in order to leverage TensorFlow
 # and/or ONNXruntime. The exported variable will be used within the
 # Ansible playbook to disable certain wake words and VAD plugin requiring
@@ -163,6 +188,8 @@ function detect_cpu_instructions() {
     echo -e "[$done_format]"
 }
 
+# 查找现有或部分的 Open Voice OS 实例。
+# 首先检查 Docker 和 Podman 是否存在 ovos-* 或 hivemind-* 容器，若未找到则检查 Python 虚拟环境。
 # Look for existing or partial instance of Open Voice OS.
 # First Docker and Podman will be checked for ovos-* and/or hivemind-*
 # containers, if nothing was found then the function will check for
@@ -184,6 +211,8 @@ function detect_existing_instance() {
     echo -e "[$done_format]"
 }
 
+# 检查是否有显示服务器在运行，例如 X 或 Wayland。
+# 此函数仅在使用 systemd 的系统上工作，因为它使用了 loginctl 来检索会话类型。
 # Check is a display server is running such as X or Wayland
 # This function only works with systemd as it leveraged loginctl
 # to retrieve the session type.
@@ -203,6 +232,7 @@ function detect_display() {
     echo -e "[$done_format]"
 }
 
+# 如果存在则解析 /sys/firmware/devicetree/base/model 文件并检查其中是否包含 "raspberrypi" 字符串。
 # Parse /sys/firmware/devicetree/base/model file if it exists and check
 # for "raspberrypi" string.
 function is_raspeberrypi_soc() {
@@ -224,6 +254,8 @@ function is_raspeberrypi_soc() {
     echo -e "[$done_format]"
 }
 
+# 基于标准的 /etc/os-release 和 Python 命令检索操作系统信息。
+# 这用于向用户显示安装程序运行的平台信息以及 OVOS 将要安装到的目标平台信息。
 # Retrieve operating system information based on standard /etc/os-release
 # and Python command. This is used to display information to the user
 # about the platform where the installer is running on and where OVOS is
@@ -235,7 +267,7 @@ function get_os_information() {
         KERNEL="$(uname -r 2>>"$LOG_FILE")"
         PYTHON="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[0:2])))' 2>>"$LOG_FILE")"
 
-        # shellcheck source=/etc/os-release
+    # shellcheck source=/etc/os-release
         source "$OS_RELEASE"
 
         export DISTRO_NAME="${ID:-unknown}"
@@ -252,36 +284,52 @@ function get_os_information() {
     echo -e "[$done_format]"
 }
 
+# 为基于 Debian 的发行版安装软件包
 # Install packages for Debian-based distributions
 function install_debian_packages() {
     local extra_packages=("$@")
     UPDATE=1 apt_ensure python3 python3-dev python3-pip python3-venv whiptail expect jq "${extra_packages[@]}" &>>"$LOG_FILE"
 }
 
+# 为基于 Fedora 的发行版安装软件包
 # Install packages for Fedora-based distributions
 function install_fedora_packages() {
     local extra_packages=("$@")
     dnf install -y python3 python3-devel python3-pip python3-virtualenv python3-libdnf5 newt expect jq "${extra_packages[@]}" &>>"$LOG_FILE"
 }
 
+# 为基于 Red Hat 的发行版安装软件包
 # Install packages for Red Hat-based distributions
 function install_rhel_packages() {
     local extra_packages=("$@")
     dnf install -y python3 python3-devel python3-pip newt expect jq "${extra_packages[@]}" &>>"$LOG_FILE"
 }
 
+# 为 openSUSE 发行版安装软件包
 # Install packages for openSUSE distributions
 function install_opensuse_packages() {
     local extra_packages=("$@")
     zypper install --no-recommends -y python3 python3-devel python3-pip python3-rpm newt expect jq "${extra_packages[@]}" &>>"$LOG_FILE"
 }
 
+# 为基于 Arch 的发行版安装软件包
 # Install packages for Arch-based distributions
 function install_arch_packages() {
     local extra_packages=("$@")
     pacman -Sy --noconfirm python python-pip python-virtualenv libnewt expect jq "${extra_packages[@]}" &>>"$LOG_FILE"
 }
 
+# 基于从 get_os_information() 获取的信息安装安装器所需的软件包。
+# 如果操作系统不受支持，安装程序将以消息形式退出。
+#
+# 此函数验证必要的环境变量是否已设置，并将软件包安装委托给不同发行版的特定函数。
+#
+# 依赖项：
+#   - DISTRO_NAME: 必须由 get_os_information() 设置
+#   - RASPBERRYPI_MODEL: 可选，由 is_raspeberrypi_soc() 设置
+#
+# 返回值：
+#   成功返回 0，对于不受支持的发行版以 EXIT_OS_NOT_SUPPORTED 退出
 # Install packages required by the installer based on retrieved information
 # from get_os_information() function. If the operating system is not supported then
 # the installer will exit with a message.
@@ -336,18 +384,22 @@ function required_packages() {
     echo -e "[$done_format]"
 }
 
+# 创建安装器的 Python 虚拟环境并更新 pip 和 setuptools 包。
+# 虚拟环境的权限会设置为与目标用户一致。
 # Create the installer Python virtual environment and update pip and
 # setuptools package.Permissions on the virtual environment are set
 # to match the target user.
 function create_python_venv() {
     printf '%s' "➤ Creating installer Python virtualenv... "
 
+    # 确保 Python 版本高于 3.8。
     # Make sure Python version is higher then 3.8.
     if [ "$(ver "$PYTHON")" -lt "$(ver 3.9)" ]; then
         echo "python $PYTHON is not supported" &>>"$LOG_FILE"
         on_error
     fi
 
+    # 当检测到 aarch64 CPU 架构或 Raspberry Pi 5 板时禁用 https://www.piwheels.org/simple。
     # Disable https://www.piwheels.org/simple when aarch64 CPU architecture
     # or Raspberry Pi 5 board are detected.
     if [ -f /etc/pip.conf ]; then
@@ -358,6 +410,7 @@ function create_python_venv() {
 
     if [ -d "$VENV_PATH" ]; then
         if [ "$REUSE_CACHED_ARTIFACTS" != "true" ]; then
+            # 在开始之前确保一切干净。
             # Make sure everything is clean before starting.
             rm -rf "$VENV_PATH" /root/.ansible &>>"$LOG_FILE"
         fi
@@ -383,6 +436,8 @@ function create_python_venv() {
     echo -e "[$done_format]"
 }
 
+# 在新的 Python 虚拟环境中安装 Ansible，并安装 Ansible 剧本所需的 Ansible 集合。
+# 这些集合将安装到 /root/.ansible 目录下。
 # Install Ansible into the new Python virtual environment and install the
 # Ansible's collections required by the Ansible playbook as well. These
 # collections will be installed under the /root/.ansible directory.
@@ -395,6 +450,8 @@ function install_ansible() {
     echo -e "[$done_format]"
 }
 
+# 从 GitHub 下载 yq 工具以解析 YAML 场景文件。
+# 二进制文件将根据检测到的操作系统和 CPU 架构下载。
 # Downloads the yq tool from GitHub to parse YAML scenario file.
 # The binary will be downloaded based on the found operating system and CPU
 # architecture.
@@ -412,6 +469,7 @@ function download_yq() {
     chmod 0755 "$YQ_BINARY_PATH" &>>"$LOG_FILE"
 }
 
+# 搜索 scenario.yaml 文件。该文件将在非交互式安装中使用，例如在 CI 中运行或需要工业部署时。
 # Search for a scenario.yaml file. This file will be used for non-interactive
 # installation like when running within a CI or when industrial deployments
 # are required.
@@ -443,6 +501,11 @@ function detect_scenario() {
     echo -e "[$done_format]"
 }
 
+# 此函数检查元素是否存在于 Bash 数组中。
+# 函数接受两个参数：
+#  1. Bash 数组
+#  2. 要查找的元素
+# 参考: https://raymii.org/s/snippets/Bash_Bits_Check_If_Item_Is_In_Array.html
 # This function checks if element exists within a Bash array.
 # The function takes two arguments:
 #  1. The Bash array
@@ -461,6 +524,7 @@ function in_array() {
     on_error
 }
 
+# 此函数验证 Windows WSL2 的基本要求，例如 systemd 是否处理启动过程等。
 # This function validates basic requirements for Windows WSL2 such as systemd
 # handles the boot process, etc...
 function wsl2_requirements() {
@@ -474,6 +538,8 @@ function wsl2_requirements() {
     fi
 }
 
+# 这是一个帮助函数，用于从语义版本号中去除点，例如将 3.9 或 6.5.3 处理为可比较的格式。
+# 在比较 Python 或内核版本时非常有用。
 # This is a helper to strip the point from semantic versioning such as 3.9 or
 # 6.5.3. Mostly useful when comparing Python or kernel version.
 function ver() {
@@ -481,6 +547,9 @@ function ver() {
     printf "%03d" $(echo "$1" | tr '.' ' ')
 }
 
+# 检查 I2C 总线上是否存在特定的十六进制地址。
+# 接受类似 "2f" 的参数并转换为 "0x2f"。
+# 仅在检测到 Raspberry Pi 板时使用。
 # Check if a specific hexadecimal address exists on the I2C bus.
 # Takes an argument like "2f" which is converted to "0x2f".
 # Only used when a Raspberry Pi board is detected.
@@ -491,6 +560,8 @@ function i2c_get() {
     return 1
 }
 
+# 扫描 I2C 总线以查找安装程序支持的任何设备。
+# 仅在检测到 Raspberry Pi 板时运行此函数。
 # Scan the I2C bus to find any devices supported by the installer.
 # This function will only run if a Raspberry Pi board is detected.
 function i2c_scan() {
@@ -522,6 +593,9 @@ function i2c_scan() {
     fi
 }
 
+# 从 https://artifacts.smartgic.io 下载带有 libgpiod 支持的 avrdude 二进制文件。
+# 下载后，将创建一个带有 Mark 1 必需引脚定义的自定义 avrduderc 文件。
+# 仅在检测到 I2C 1a 地址（UU 保留地址）且为 Raspberry Pi 板时才会下载此二进制文件。
 # Downloads avrdude binary with libgpiod support from
 # https://artifacts.smartgic.io. Once downloaded, a custom avrduderc will
 # be created with the Mark 1 required pinout. This binary will only be
@@ -554,6 +628,8 @@ EOF
     curl -s -f -L --insecure "$AVRDUDE_CONFIG_URL" -o "$AVRDUDE_CONFIG_PATH" &>>"$LOG_FILE"
 }
 
+# 当存在时，此函数检索 atmega328p 的签名。如果签名与特定值匹配，则表示检测到 Mark 1 设备。
+# 仅在检测到 I2C 保留设备时触发此函数。
 # This function retrieves the atmega328p signature when present. If the
 # signature matches a specific value then it means that a Mark 1 device
 # is detected.
@@ -566,6 +642,7 @@ function detect_mark1_device() {
     fi
 }
 
+# 此函数检查是否存在 attiny1614 I2C 设备，仅在检测到 tas5806 I2C 设备时触发。
 # This function checks if attiny1614 I2C device is present, this is only
 # triggered when a tas5806 I2C device is detected.
 function detect_devkit_device() {
@@ -578,6 +655,14 @@ function detect_devkit_device() {
     DETECTED_DEVICES+=("tas5806")
 }
 
+# 检查 apt 包是否已安装，如有需要则安装。
+# 使用此函数而不是直接 apt install 的主要原因是在已具备所有请求包时可避免使用 sudo。
+# 参数：
+#     *ARGS : 一个或多个要安装的包名
+# 环境变量：
+#     UPDATE : 如果设置了此变量，还会运行 apt update
+# 示例：
+#     apt_ensure git curl htop
 # Checks to see if apt-based packages are installed and installs them if needed.
 # The main reason to use this over normal apt install is that it avoids sudo if
 # we already have all requested packages.
@@ -619,6 +704,8 @@ function apt_ensure() {
     fi
 }
 
+# 此函数确保为 OVOS 环境存在并正确配置本地状态目录。
+# 它会创建特定的目录结构并准备好安装器状态文件以供使用。
 # This function ensures the existence and proper configuration of a
 # local state directory for the OVOS environment. It sets up a
 # specific directory structure and prepares an installer state file for use.
